@@ -507,3 +507,71 @@ Example response:
   }
 }
 ```
+
+## RSS Feeds
+
+linkding provides RSS feeds for bookmarks, which are authenticated using feed tokens. Each user has a unique feed token that can be accessed through the *Settings* page.
+
+### Available Feeds
+
+**All Bookmarks Feed**
+
+```
+GET /feeds/<feed_token>/all
+```
+
+Returns all unarchived bookmarks for the authenticated user.
+
+**Unread Bookmarks Feed**
+
+```
+GET /feeds/<feed_token>/unread
+```
+
+Returns all unread, unarchived bookmarks for the authenticated user.
+
+**Shared Bookmarks Feed**
+
+```
+GET /feeds/<feed_token>/shared
+```
+
+Returns all shared bookmarks visible to the authenticated user.
+
+**Public Shared Bookmarks Feed**
+
+```
+GET /feeds/shared
+```
+
+Returns all public shared bookmarks. Does not require authentication.
+
+### Query Parameters
+
+All feeds support the following query parameters:
+
+- `q` - Filters results using a search phrase using the same logic as through the UI
+- `limit` - Limits the max. number of results. Default is `100`.
+- `user` - Filters shared bookmarks by username (shared feeds only)
+- `bundle` - Filter results by bundle id to only include bookmarks matched by a given bundle
+- `unread` - Filter by unread status: `yes` or `no`
+- `shared` - Filter by shared status: `yes` or `no`
+
+#### Including Notes (All and Unread Feeds Only)
+
+- `include_notes` - Set to exactly `yes` to include bookmark notes in feed descriptions
+
+When `include_notes=yes` is specified on the All or Unread feeds:
+- Notes are appended to the bookmark description in the format: `<description>\n\nNotes:\n<notes>`
+- If the description is empty, only the notes are shown: `Notes:\n<notes>`
+- Notes are sanitized as plain text for RSS compatibility
+- Empty notes do not introduce spurious content
+
+**Important:** The `include_notes` parameter is ignored on Shared and Public Shared feeds. Private notes are never exposed in shared feeds, even when this parameter is supplied.
+
+Example:
+
+```
+GET /feeds/<feed_token>/all?include_notes=yes
+```
+

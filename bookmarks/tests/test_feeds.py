@@ -471,3 +471,244 @@ class FeedsTestCase(TestCase, BookmarkFactoryMixin):
             reverse("linkding:feeds.all", args=[self.token.key]) + "?bundle=invalid"
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_all_with_notes_parameter_yes(self):
+        self.setup_bookmark(
+            title="Bookmark with notes",
+            description="Test description",
+            notes="These are some test notes",
+        )
+        self.setup_bookmark(
+            title="Bookmark without notes", description="Another description"
+        )
+
+        response = self.client.get(
+            reverse("linkding:feeds.all", args=[self.token.key]) + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Bookmark with notes should have notes appended
+        self.assertContains(
+            response,
+            "<description>Test description\n\nNotes:\nThese are some test notes</description>",
+            count=1,
+        )
+        # Bookmark without notes should have description as-is
+        self.assertContains(
+            response, "<description>Another description</description>", count=1
+        )
+
+    def test_all_without_notes_parameter(self):
+        self.setup_bookmark(
+            title="Bookmark with notes",
+            description="Test description",
+            notes="These are some test notes",
+        )
+
+        response = self.client.get(reverse("linkding:feeds.all", args=[self.token.key]))
+        self.assertEqual(response.status_code, 200)
+
+        # Notes should not appear
+        self.assertNotContains(response, "These are some test notes")
+        self.assertContains(
+            response, "<description>Test description</description>", count=1
+        )
+
+    def test_all_with_notes_parameter_invalid_value(self):
+        self.setup_bookmark(
+            title="Bookmark with notes",
+            description="Test description",
+            notes="These are some test notes",
+        )
+
+        # Test various invalid values
+        for value in ["true", "1", "Yes", "YES", ""]:
+            response = self.client.get(
+                reverse("linkding:feeds.all", args=[self.token.key])
+                + f"?include_notes={value}"
+            )
+            self.assertEqual(response.status_code, 200)
+            # Notes should not appear with invalid values
+            self.assertNotContains(response, "These are some test notes")
+
+    def test_all_with_empty_notes(self):
+        self.setup_bookmark(
+            title="Bookmark with empty notes", description="Test description", notes=""
+        )
+
+        response = self.client.get(
+            reverse("linkding:feeds.all", args=[self.token.key]) + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Should not add spurious "Notes:" header
+        self.assertContains(
+            response, "<description>Test description</description>", count=1
+        )
+        self.assertNotContains(response, "Notes:")
+
+    def test_all_notes_only_when_description_empty(self):
+        self.setup_bookmark(
+            title="Bookmark with notes only",
+            description="",
+            notes="Only notes, no description",
+        )
+
+        response = self.client.get(
+            reverse("linkding:feeds.all", args=[self.token.key]) + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Should render notes without description prefix
+        self.assertContains(
+            response,
+            "<description>Notes:\nOnly notes, no description</description>",
+            count=1,
+        )
+
+    def test_all_notes_sanitization(self):
+        self.setup_bookmark(
+            title="Bookmark with control chars",
+            description="Description",
+            notes="Notes with\nnewline\ttab\x08backspace\x00null",
+        )
+
+        response = self.client.get(
+            reverse("linkding:feeds.all", args=[self.token.key]) + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Newlines and tabs should be preserved, other control chars removed
+        self.assertContains(response, "Notes with\nnewline\ttab")
+        self.assertNotContains(response, "\x08")
+        self.assertNotContains(response, "\x00")
+
+    def test_unread_with_notes_parameter_yes(self):
+        self.setup_bookmark(
+            title="Unread with notes",
+            description="Test description",
+            notes="Unread notes",
+            unread=True,
+        )
+        self.setup_bookmark(
+            title="Unread without notes",
+            description="Another description",
+            unread=True,
+        )
+
+        response = self.client.get(
+            reverse("linkding:feeds.unread", args=[self.token.key])
+            + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Bookmark with notes should have notes appended
+        self.assertContains(
+            response,
+            "<description>Test description\n\nNotes:\nUnread notes</description>",
+            count=1,
+        )
+        # Bookmark without notes should have description as-is
+        self.assertContains(
+            response, "<description>Another description</description>", count=1
+        )
+
+    def test_unread_without_notes_parameter(self):
+        self.setup_bookmark(
+            title="Unread with notes",
+            description="Test description",
+            notes="Unread notes",
+            unread=True,
+        )
+
+        response = self.client.get(
+            reverse("linkding:feeds.unread", args=[self.token.key])
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Notes should not appear
+        self.assertNotContains(response, "Unread notes")
+        self.assertContains(
+            response, "<description>Test description</description>", count=1
+        )
+
+    def test_shared_ignores_notes_parameter(self):
+        user = self.setup_user(enable_sharing=True)
+        self.setup_bookmark(
+            title="Shared with notes",
+            description="Shared description",
+            notes="Private notes that should not appear",
+            shared=True,
+            user=user,
+        )
+
+        response = self.client.get(
+            reverse("linkding:feeds.shared", args=[self.token.key])
+            + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Notes should never appear in shared feed
+        self.assertNotContains(response, "Private notes that should not appear")
+        self.assertContains(
+            response, "<description>Shared description</description>", count=1
+        )
+
+    def test_public_shared_ignores_notes_parameter(self):
+        user = self.setup_user(enable_sharing=True, enable_public_sharing=True)
+        self.setup_bookmark(
+            title="Public shared with notes",
+            description="Public description",
+            notes="Private notes that should not appear",
+            shared=True,
+            user=user,
+        )
+
+        response = self.client.get(
+            reverse("linkding:feeds.public_shared") + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Notes should never appear in public shared feed
+        self.assertNotContains(response, "Private notes that should not appear")
+        self.assertContains(
+            response, "<description>Public description</description>", count=1
+        )
+
+    def test_notes_not_leaked_across_users(self):
+        # Create another user with their own feed token
+        other_user = User.objects.create_user(
+            "otheruser", "otheruser@example.com", "password123"
+        )
+        other_token = FeedToken.objects.get_or_create(user=other_user)[0]
+
+        # Create bookmark for test user with notes
+        self.setup_bookmark(
+            title="Test user bookmark",
+            description="Test description",
+            notes="Test user's private notes",
+        )
+
+        # Create bookmark for other user with notes
+        self.setup_bookmark(
+            title="Other user bookmark",
+            description="Other description",
+            notes="Other user's private notes",
+            user=other_user,
+        )
+
+        # Test user's feed should only show test user's notes
+        response = self.client.get(
+            reverse("linkding:feeds.all", args=[self.token.key]) + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Test user's private notes")
+        self.assertNotContains(response, "Other user's private notes")
+
+        # Other user's feed should only show other user's notes
+        response = self.client.get(
+            reverse("linkding:feeds.all", args=[other_token.key]) + "?include_notes=yes"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Other user's private notes")
+        self.assertNotContains(response, "Test user's private notes")

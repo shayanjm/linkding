@@ -16,6 +16,7 @@ class FeedContext:
     request: HttpRequest
     feed_token: FeedToken | None
     query_set: QuerySet[Bookmark]
+    include_notes: bool = False
 
 
 def resolve_user(search: BookmarkSearch) -> User | None:
@@ -48,7 +49,8 @@ class BaseBookmarksFeed(Feed):
             bundle=bundle,
         )
         query_set = self.get_query_set(feed_token, search)
-        return FeedContext(request, feed_token, query_set)
+        include_notes = request.GET.get("include_notes") == "yes"
+        return FeedContext(request, feed_token, query_set, include_notes)
 
     def get_query_set(self, feed_token: FeedToken, search: BookmarkSearch):
         raise NotImplementedError
@@ -85,6 +87,21 @@ class AllBookmarksFeed(BaseBookmarksFeed):
     def link(self, context: FeedContext):
         return reverse("linkding:feeds.all", args=[context.feed_token.key])
 
+    def item_description(self, item: Bookmark):
+        description = sanitize(item.resolved_description)
+        context = getattr(self, "_current_context", None)
+        if context and context.include_notes and item.notes:
+            sanitized_notes = sanitize(item.notes)
+            if description:
+                return f"{description}\n\nNotes:\n{sanitized_notes}"
+            else:
+                return f"Notes:\n{sanitized_notes}"
+        return description
+
+    def items(self, context: FeedContext):
+        self._current_context = context
+        return super().items(context)
+
 
 class UnreadBookmarksFeed(BaseBookmarksFeed):
     title = "Unread bookmarks"
@@ -97,6 +114,21 @@ class UnreadBookmarksFeed(BaseBookmarksFeed):
 
     def link(self, context: FeedContext):
         return reverse("linkding:feeds.unread", args=[context.feed_token.key])
+
+    def item_description(self, item: Bookmark):
+        description = sanitize(item.resolved_description)
+        context = getattr(self, "_current_context", None)
+        if context and context.include_notes and item.notes:
+            sanitized_notes = sanitize(item.notes)
+            if description:
+                return f"{description}\n\nNotes:\n{sanitized_notes}"
+            else:
+                return f"Notes:\n{sanitized_notes}"
+        return description
+
+    def items(self, context: FeedContext):
+        self._current_context = context
+        return super().items(context)
 
 
 class SharedBookmarksFeed(BaseBookmarksFeed):
